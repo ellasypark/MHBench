@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from pathlib import Path
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class ElasticSearchConfig(BaseModel):
@@ -27,6 +29,7 @@ class OpenstackConfig(BaseModel):
     def to_terraform_vars(self) -> dict[str, str]:
         """Render the Terraform variable mapping expected by our modules."""
         perry_key = self.perry_key_name or self.ssh_key_name
+
         return {
             "project_name": self.project_name,
             "openstack_username": self.openstack_username,
@@ -37,12 +40,34 @@ class OpenstackConfig(BaseModel):
         }
 
 
+class NetworkGuardrailConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    enabled: bool = False
+    policy_path: Path | None = None
+    state_dir: Path = Path(".mhbench/guardrails")
+
+    @model_validator(mode="after")
+    def validate_enabled_policy(self):
+        if self.enabled and self.policy_path is None:
+            raise ValueError(
+                "network_guardrail.policy_path is required "
+                "when the guardrail is enabled"
+            )
+
+        return self
+
+
 class Config(BaseModel):
     elastic_config: ElasticSearchConfig
     c2_config: C2Config | None = None
     openstack_config: OpenstackConfig
     external_ip: str
     experiment_timeout_minutes: int
+
+    network_guardrail: NetworkGuardrailConfig = Field(
+        default_factory=NetworkGuardrailConfig
+    )
 
     @property
     def terraform_vars(self) -> dict[str, str]:
